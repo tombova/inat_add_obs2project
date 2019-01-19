@@ -9,7 +9,7 @@ import sys
 import json
 import logging
 import configparser
-import pprint
+#import pprint
 #import time
 from typing import Dict
 import requests
@@ -43,7 +43,7 @@ def get_access_token(username: str,
     :param password:
     :param app_id:
     :param app_secret:
-    :return: the access token, example use: 
+    :return: the access token, example use:
            headers = {"Authorization": "Bearer %s" % access_token}
     """
     payload = {
@@ -83,29 +83,31 @@ def get_project(project_id):
             place = result['place']
             LOGGER.info("  Place: %s", place['display_name'])
             LOGGER.info("Number of rules: %d",
-                             len(result['project_observation_rules']))
+                        len(result['project_observation_rules']))
             for a_rule in result['project_observation_rules']:
                 if a_rule['operand_type'] == 'Taxon':
                     taxon = a_rule['taxon']
                     LOGGER.info("  Name: %s,  count: %s", taxon['name'],
-                                     taxon['observations_count'])
-            LOGGER.info("----------------------------------")   
-      
-    get_url='%s/projects/%s.json' % (INAT_BASE_URL, project_id)
+                                taxon['observations_count'])
+            LOGGER.info("----------------------------------")
+
+    get_url = '%s/projects/%s.json' % (INAT_BASE_URL, project_id)
     get_req = requests.get(get_url)
-    #LOGGER.info("GET project request status code: %d", get_req.status_code)    
+    #LOGGER.info("GET project request status code: %d", get_req.status_code)
     #LOGGER.info("GET project request response: '%s'", get_req.text)
-    if get_req.status_code == 200:    
+    if get_req.status_code == 200:
         response_data = json.loads(get_req.text)
-        LOGGER.info("Project observation count: %s", response_data['project_observations_count'])
+        LOGGER.info("Project observation count: %s",
+                    response_data['project_observations_count'])
 
     LOGGER.info("\nGet project stats")
     project_species = []
-    get_stats_url='%sobservations/species_counts' \
-                '?project_id=%s&place_id=any' \
-                '&verifiable=any&captive=any' % (INAT_NODE_API_BASE_URL, project_id)
+    get_stats_url = '%sobservations/species_counts' \
+                    '?project_id=%s&place_id=any' \
+                    '&verifiable=any&captive=any' % \
+                    (INAT_NODE_API_BASE_URL, project_id)
     get_stats_req = requests.get(get_stats_url)
-    if get_stats_req.status_code == 200:    
+    if get_stats_req.status_code == 200:
         response_data = json.loads(get_stats_req.text)
         #LOGGER.info(response_data)
         LOGGER.info("Total species: %s", response_data['total_results'])
@@ -113,62 +115,57 @@ def get_project(project_id):
         for a_result in results:
             try:
                 rank = a_result['taxon']['rank']
-            except KeyError: 
+            except KeyError:
                 rank = '<none>'
             taxon = a_result['taxon']['iconic_taxon_name']
             LOGGER.info("Name: %s, Common name: %s id: %s\n"
-                  "  rank: %s taxon: %s count: %s",
-                  a_result['taxon']['name'], 
-                  a_result['taxon']['preferred_common_name'], 
-                  a_result['taxon']['id'],
-                  rank,
-                  taxon,
-                  a_result['count'])
+                        "  rank: %s taxon: %s count: %s",
+                        a_result['taxon']['name'],
+                        a_result['taxon']['preferred_common_name'],
+                        a_result['taxon']['id'],
+                        rank,
+                        taxon,
+                        a_result['count'])
             project_species.append(a_result['taxon']['id'])
 
     else:
         LOGGER.info("Stats request '%s' failed: %d", get_stats_url,
-                                                 get_stats_req.status_code)
-        
+                    get_stats_req.status_code)
 
     return project_species
-     
+
 # THIS DIDN'T WORK
 def add_ob_2_proj_v1(observation_id, project_id, access_token):
     ''' Use V1 API to add an observation to a project '''
-    
+
     payload = {"observation_id":  observation_id}
-    post_url='https://api.inaturalist.org/v1/projects/%s/add' % project_id
+    post_url = 'https://api.inaturalist.org/v1/projects/%s/add' % project_id
     post_req = requests.post(post_url,
-                            data=json.dumps(payload),
-                            headers=_build_auth_header(access_token))
+                             data=json.dumps(payload),
+                             headers=_build_auth_header(access_token))
     LOGGER.info("POST request status code: %d", post_req.status_code)
     LOGGER.info("POST request response: '%s'", post_req.text)
 
 
 def add_ob_2_proj(observation_id, project_id, access_token):
     ''' Use V1 API to add an observation to a project '''
-    
- 
+
     data = {'project_observation[observation_id]': observation_id,
             'project_observation[project_id]': project_id}
-    
-              
 
-    post_url='%s/project_observations' % INAT_BASE_URL
+    post_url = '%s/project_observations' % INAT_BASE_URL
     post_req = requests.post(post_url,
-                            data=data,
-                            headers=_build_auth_header(access_token))
+                             data=data,
+                             headers=_build_auth_header(access_token))
     if post_req.status_code == 200:
         LOGGER.info("POST successful")
         return True
     LOGGER.info("POST request status code: %d", post_req.status_code)
     LOGGER.info("POST request response: '%s'", post_req.text)
     return False
-    
-    
+
 def _build_auth_header(access_token: str) -> Dict[str, str]:
-    ''' This function takes the access_token and creates the Authorization 
+    ''' This function takes the access_token and creates the Authorization
         header needed by the non-V1 interface'''
 
     return {"Authorization": "Bearer %s" % access_token}
@@ -177,14 +174,14 @@ def _build_auth_header(access_token: str) -> Dict[str, str]:
 ############################################
 # Main program                             #
 ############################################
-       
 
 LOG_PATH = "./"
 LOG_FILE_NAME = "results.log"
 with open(LOG_FILE_NAME, "w"):
-	pass
+    pass
 
-LOG_FORMATTER = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+LOG_FORMATTER = logging.Formatter("%(asctime)s [%(threadName)-12.12s]"
+                                  " [%(levelname)-5.5s]  %(message)s")
 LOGGER = logging.getLogger()
 LOGGER.setLevel(CONFIG['DEFAULT']['loggingLevel'])
 
