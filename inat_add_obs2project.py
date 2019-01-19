@@ -199,7 +199,8 @@ def main():
 
     config = configparser.ConfigParser()
     config['DEFAULT'] = {'loggingLevel': 'INFO'}
-    config['inaturalist.org'] = {'project_id': '7561'}
+    config['inaturalist.org'] = {'project_id': '7561',
+                                 'addObservations': True}
     if len(sys.argv) > 1:
         config_filename = sys.argv[1]
     else:
@@ -209,10 +210,14 @@ def main():
         dummy_h = open(config_filename, 'r')
         dummy_h.close()
     except FileNotFoundError:
-        with open(config_filename, 'w') as config_file:
-            config.write(config_file)
-    else:
-        config.read(config_filename)
+        LOGGER.warning("File: '%s' not found, creating", config_filename)
+
+    # Read config file
+    config.read(config_filename)
+
+    # Write possibly update file
+    with open(config_filename, 'w') as config_file:
+        config.write(config_file)
 
     LOGGER.setLevel(config['DEFAULT']['loggingLevel'])
 
@@ -351,14 +356,19 @@ def main():
 
                     # Try to add observation to project using access_token for
                     # authentication
-                    if add_ob_2_proj(result['id'],
-                                     config['inaturalist.org']['project_id'],
-                                     access_token):
-                        if new_species_flag:
-                            new_species_add += 1
-                        observations_added += 1
-                    else:
-                        observations_add_failures += 1
+
+                    add_obs = config.getboolean('inaturalist.org',
+                                                'addObservations')
+                    if add_obs:
+                        if  add_ob_2_proj(result['id'],
+                                          config['inaturalist.org']\
+                                                ['project_id'],
+                                          access_token):
+                            if new_species_flag:
+                                new_species_add += 1
+                            observations_added += 1
+                        else:
+                            observations_add_failures += 1
 
                     LOGGER.info("----------------------------------")
 
@@ -381,8 +391,8 @@ def main():
 
     # Send results to the following email addresses
     try:
-        gmail_config = config['gmail.com']
-        if send_gmail.send_email(gmail_config, results_buffer,
+        dummy_gmail_config = config['gmail.com']
+        if send_gmail.send_email(config, LOGGER, results_buffer,
                                  subject="inat_add_objs2project results"):
             LOGGER.info("Email sent")
         else:
