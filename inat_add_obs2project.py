@@ -15,8 +15,6 @@ from typing import Dict
 import requests
 import send_gmail
 
-CONFIG = configparser.ConfigParser()
-CONFIG.read('inat_add_obs2project.ini')
 
 
 INAT_NODE_API_BASE_URL = "https://api.inaturalist.org/v1/"
@@ -183,7 +181,6 @@ with open(LOG_FILE_NAME, "w"):
 LOG_FORMATTER = logging.Formatter("%(asctime)s [%(threadName)-12.12s]"
                                   " [%(levelname)-5.5s]  %(message)s")
 LOGGER = logging.getLogger()
-LOGGER.setLevel(CONFIG['DEFAULT']['loggingLevel'])
 
 FILE_HANDLER = logging.FileHandler("{0}/{1}".format(LOG_PATH, LOG_FILE_NAME))
 FILE_HANDLER.setFormatter(LOG_FORMATTER)
@@ -199,15 +196,49 @@ LOGGER.addHandler(CONSOLE_HANDLER)
 # pylint: disable=too-many-statements,too-many-branches,too-many-locals
 def main():
     ''' Main function '''
-    access_token = get_access_token(CONFIG['inaturalist.org']['username'],
-                                    CONFIG['inaturalist.org']['password'],
-                                    CONFIG['inaturalist.org']['app_id'],
-                                    CONFIG['inaturalist.org']['app_secret'])
+
+    config = configparser.ConfigParser()
+    config['DEFAULT'] = {'loggingLevel': 'INFO'}
+    config['inaturalist.org'] = {'project_id': '7561'}
+    if len(sys.argv) > 1:
+        config_filename = sys.argv[1]
+    else:
+        config_filename = 'inat_add_obs2project.ini'
+
+    try:
+        dummy_h = open(config_filename, 'r')
+        dummy_h.close()
+    except FileNotFoundError:
+        with open(config_filename, 'w') as config_file:
+            config.write(config_file)
+    else:
+        config.read(config_filename)
+
+    LOGGER.setLevel(config['DEFAULT']['loggingLevel'])
+
+    try:
+        access_token = get_access_token(config['inaturalist.org']['username'],
+                                        config['inaturalist.org']['password'],
+                                        config['inaturalist.org']['app_id'],
+                                        config['inaturalist.org']['app_secret'])
+    except KeyError:
+        LOGGER.warning("Need to define username, password, app_id, and "
+                       "app_secret in [inaturalist.org] section of "
+                       "configuration file: %s",
+                       config_file)
+        access_token = ""
 
     page_size = 100
 
     # Get some project information and a list of current species
-    project_species = get_project(CONFIG['inaturalist.org']['project_id'])
+    try:
+        project_species = get_project(config['inaturalist.org']['project_id'])
+    except KeyError:
+        LOGGER.warning("Need to define project_id "
+                       "in [inaturalist.org] section of "
+                       "configuration file: %s",
+                       config_file)
+
 
     # These are some variables used for counting things and keeping track
     # of states
@@ -230,7 +261,7 @@ def main():
     for a_taxon in taxon_list:
         LOGGER.info("\nQuery for research grade %s in New York State "
                     "not in project: %s", a_taxon,
-                    CONFIG['inaturalist.org']['project_id'])
+                    config['inaturalist.org']['project_id'])
 
         # Start with page 1
         page = 1
@@ -249,7 +280,7 @@ def main():
                     '&per_page=%s'
                     '&order=desc'
                     '&order_by=created_at' % \
-                    (a_taxon, CONFIG['inaturalist.org']['project_id'],
+                    (a_taxon, config['inaturalist.org']['project_id'],
                      page, page_size))
 
 
@@ -321,7 +352,7 @@ def main():
                     # Try to add observation to project using access_token for
                     # authentication
                     if add_ob_2_proj(result['id'],
-                                     CONFIG['inaturalist.org']['project_id'],
+                                     config['inaturalist.org']['project_id'],
                                      access_token):
                         if new_species_flag:
                             new_species_add += 1
@@ -349,8 +380,15 @@ def main():
         results_buffer = results_file.read()
 
     # Send results to the following email addresses
-    send_gmail.send_email(CONFIG, results_buffer,
-                          subject="inat_add_objs2project results")
+    try:
+        gmail_config = config['gmail.com']
+        if send_gmail.send_email(gmail_config, results_buffer,
+                                 subject="inat_add_objs2project results"):
+            LOGGER.info("Email sent")
+        else:
+            LOGGER.error("Failed to send email")
+    except KeyError:
+        LOGGER.warning("gmail.com configuration not defined")
 
 
 if __name__ == "__main__":

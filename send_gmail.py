@@ -11,8 +11,11 @@ import configparser
 def send_email(config_values, body, subject='Test email'):
     ''' Send an email from a python script '''
 
-    sent_from = config_values['gmail.com']['username']
-    send_to = config_values['gmail.com']['destination_email'].split(',')
+    try:
+        sent_from = config_values['gmail.com']['username']
+        send_to = config_values['gmail.com']['destination_email'].split(',')
+    except KeyError:
+        return False
     email_text = "From: %s\r\n" \
                 "To: %s\r\n" \
                 "Subject: %s\r\n" \
@@ -33,8 +36,10 @@ def send_email(config_values, body, subject='Test email'):
         server.close()
 
         print('Email sent!')
+        return True
     except smtplib.SMTPException as e_value:
         print('Something went wrong, %s', str(e_value))
+        return False
 
 
 if __name__ == "__main__":
