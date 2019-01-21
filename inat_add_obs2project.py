@@ -62,10 +62,44 @@ def get_access_token(username: str,
         raise AuthenticationError("Authentication error, "
                                   " please check credentials.")
 
+def get_place_name(place_id):
+    ''' Get Place name from ID '''
+
+    LOGGER.info("Looking up place: %s", place_id)
+    place_name = None
+    place = requests.get("https://api.inaturalist.org/v1/places/%s" \
+                           % place_id)
+    if place.status_code == 200:
+        response_data = json.loads(place.text)
+        try:
+            place_name = response_data['results'][0]['display_name']
+        except KeyError:
+            LOGGER.error("place_id '%s' not found", place_id)
+    else:
+        LOGGER.error("response status = %d", place.status_code)
+    return place_name
+
+def get_project_id(project_slug):
+    ''' Get Project ID from slug (short name) '''
+
+    project_id = None
+    project = requests.get("https://api.inaturalist.org/v1/projects/%s" \
+                           % project_slug)
+    if project.status_code == 200:
+        response_data = json.loads(project.text)
+        try:
+            project_id = response_data['results'][0]['id']
+        except KeyError:
+            LOGGER.error("Project ID not found")
+    else:
+        LOGGER.error("Project %s not found", project_slug)
+
+    return project_id
 
 def get_project(project_id):
     ''' retrieve project information, return a list of species IDs '''
 
+    project_species = []
     project = requests.get(\
             'https://api.inaturalist.org/v1/projects/%s?rule_details=true' % \
             project_id)
@@ -79,7 +113,8 @@ def get_project(project_id):
             LOGGER.info("Title: %s", result['title'])
             LOGGER.info("Description: %s", result['description'])
             place = result['place']
-            LOGGER.info("  Place: %s", place['display_name'])
+            LOGGER.info("  Place: %s (%s)", place['display_name'],
+                        place['id'])
             LOGGER.info("Number of rules: %d",
                         len(result['project_observation_rules']))
             for a_rule in result['project_observation_rules']:
@@ -88,6 +123,8 @@ def get_project(project_id):
                     LOGGER.info("  Name: %s,  count: %s", taxon['name'],
                                 taxon['observations_count'])
             LOGGER.info("----------------------------------")
+    else:
+        return project_species
 
     get_url = '%s/projects/%s.json' % (INAT_BASE_URL, project_id)
     get_req = requests.get(get_url)
@@ -95,11 +132,11 @@ def get_project(project_id):
     #LOGGER.info("GET project request response: '%s'", get_req.text)
     if get_req.status_code == 200:
         response_data = json.loads(get_req.text)
-        LOGGER.info("Project observation count: %s",
+        LOGGER.info("Project %s observation count: %s",
+                    project_id,
                     response_data['project_observations_count'])
 
-    LOGGER.info("\nGet project stats")
-    project_species = []
+    LOGGER.info("\nGet project stats for %s", project_id)
     get_stats_url = '%sobservations/species_counts' \
                     '?project_id=%s&place_id=any' \
                     '&verifiable=any&captive=any' % \
@@ -149,6 +186,10 @@ def add_ob_2_proj_v1(observation_id, project_id, access_token):
     #LOGGER.info("POST request status code: %d", post_req.status_code)
     #LOGGER.info("POST request response: '%s'", post_req.text)
 
+    if post_req.status_code == 200:
+        LOGGER.info("POST successful")
+        return True
+    return False
 
 def add_ob_2_proj(observation_id, project_id, access_token):
     ''' Use V1 API to add an observation to a project '''
@@ -237,8 +278,7 @@ def main():
 
     config = configparser.ConfigParser()
     config['DEFAULT'] = {'loggingLevel': 'INFO'}
-    config['inaturalist.org'] = {'project_id': '7561',
-                                 'addObservations': True}
+    config['inaturalist.org'] = {'addObservations': True}
     if len(sys.argv) > 1:
         config_filename = sys.argv[1]
     else:
@@ -268,19 +308,33 @@ def main():
         LOGGER.warning("Need to define username, password, app_id, and "
                        "app_secret in [inaturalist.org] section of "
                        "configuration file: %s",
-                       config_file)
+                       config_filename)
         access_token = ""
 
     page_size = 100
 
-    # Get some project information and a list of current species
+    # Get project_id from slug name
     try:
-        project_species = get_project(config['inaturalist.org']['project_id'])
+        project_id = get_project_id(config['inaturalist.org']['project_slug'])
     except KeyError:
-        LOGGER.warning("Need to define project_id "
-                       "in [inaturalist.org] section of "
-                       "configuration file: %s",
-                       config_file)
+        LOGGER.error("Need to define project_slug "
+                     "in [inaturalist.org] section of "
+                     "configuration file: %s",
+                     config_filename)
+        return 3
+    if project_id is None:
+        LOGGER.error("Need to define project_slug "
+                     "in [inaturalist.org] section of "
+                     "configuration file: %s",
+                     config_filename)
+        return 3
+
+    # Get some project information and a list of current species
+    project_species = get_project(project_id)
+
+    if project_species is None:
+        LOGGER.warning("Failed to get species list ")
+        return 4
 
 
     # These are some variables used for counting things and keeping track
@@ -299,23 +353,32 @@ def main():
     taxon_list = ['Reptilia',
                   'Amphibia']
 
+    taxon_list = config['inaturalist.org']['taxon_list'].split(',')
+
+    place_id = config['inaturalist.org']['place_id']
+    place_name = get_place_name(place_id)
+    if place_name is None:
+        LOGGER.error("Failed to find place id: '%s'", place_id)
+        return 6
+
     # Loop for each taxon in list
     # pylint: disable=too-many-nested-blocks
     for a_taxon in taxon_list:
-        LOGGER.info("\nQuery for research grade %s in New York State "
+        LOGGER.info("\nQuery for research grade %s in %s "
                     "not in project: %s", a_taxon,
-                    config['inaturalist.org']['project_id'])
+                    config['inaturalist.org']['project_slug'],
+                    place_name)
 
         # Start with page 1
         page = 1
         done = False
         while not done:
             LOGGER.info("Page %d, page size: %d", page, page_size)
-            # Query all observations in New York State, with matching Taxon ID,
+            # Query all observations in place ID, with matching Taxon ID,
             # not already in project, is research grade, on desired page
             req_resp = requests.get(\
                     'https://api.inaturalist.org/v1/observations'
-                    '?place_id=48'
+                    '?place_id=%s'
                     '&iconic_taxa=%s'
                     '&not_in_project=%s'
                     '&quality_grade=research'
@@ -323,7 +386,8 @@ def main():
                     '&per_page=%s'
                     '&order=desc'
                     '&order_by=created_at' % \
-                    (a_taxon, config['inaturalist.org']['project_id'],
+                    (config['inaturalist.org']['place_id'],
+                     a_taxon, project_id,
                      page, page_size))
 
 
@@ -345,9 +409,6 @@ def main():
                 if len(response_data['results']) == 0:
                     done = True
                 for result in response_data['results']:
-	
-
-
                     # Try to add observation to project using access_token for
                     # authentication
 
@@ -355,8 +416,7 @@ def main():
                                                 'addObservations')
                     if add_obs:
                         if  add_ob_2_proj(result['id'],
-                                          config['inaturalist.org']\
-                                                ['project_id'],
+                                          project_id,
                                           access_token):
                             if new_species_flag:
                                 new_species_add += 1
