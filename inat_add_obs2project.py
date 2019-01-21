@@ -191,7 +191,40 @@ CONSOLE_HANDLER = logging.StreamHandler()
 CONSOLE_HANDLER.setFormatter(LOG_FORMATTER)
 LOGGER.addHandler(CONSOLE_HANDLER)
 
-# Get Access Token using username and password
+
+def print_obs(result):
+   ''' print observations '''
+
+    obs_id = result['id']
+    taxon_id = result['taxon']['id']
+
+    # Print some information about observation
+    LOGGER.info("Observation ID:        %s", obs_id)
+    LOGGER.info("Taxon ID:              %s", taxon_id)
+    LOGGER.info("Name:                  %s",
+                result['taxon']['name'])
+    LOGGER.info("Preferred common name: %s",
+                result['taxon']['preferred_common_name'])
+    #LOGGER.info("Rank:                  %s", rank)
+    #LOGGER.info("Taxon:                 %s", taxon)
+    LOGGER.info("Grade:                 %s",
+                result['quality_grade'])
+    LOGGER.info("Observed at:           %s",
+                result['time_observed_at'])
+    LOGGER.info("Created at:            %s",
+                result['created_at'])
+    LOGGER.info("User Name:             %s",
+                result['user']['name'])
+    #LOGGER.info("User ID:               %s",
+    #            result['user']['login'])
+    #LOGGER.info("Place IDs:             %s",
+    # ",".join(str(x) for x in result['place_ids'][:5]))
+    #LOGGER.info("Project IDs:           %s",
+    # ",".join(str(x) for x in result['project_ids']))
+    #LOGGER.info("\n")
+
+
+
 
 # pylint: disable=too-many-statements,too-many-branches,too-many-locals
 def main():
