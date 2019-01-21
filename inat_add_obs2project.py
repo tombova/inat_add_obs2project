@@ -108,7 +108,8 @@ def get_project(project_id):
     if get_stats_req.status_code == 200:
         response_data = json.loads(get_stats_req.text)
         #LOGGER.info(response_data)
-        LOGGER.info("Total species: %s", response_data['total_results'])
+        LOGGER.info("\nTotal species: %s\n------------",
+                    response_data['total_results'])
         results = response_data['results']
         for a_result in results:
             try:
@@ -116,8 +117,12 @@ def get_project(project_id):
             except KeyError:
                 rank = '<none>'
             taxon = a_result['taxon']['iconic_taxon_name']
-            LOGGER.info("Name: %s, Common name: %s id: %s\n"
-                        "  rank: %s taxon: %s count: %s",
+            LOGGER.info("Name:        %s\n"
+                        "Common name: %s\n"
+                        "Taxon ID:    %s\n"
+                        "Rank:        %s\n"
+                        "Taxon:       %s\n"
+                        "Count: %s\n",
                         a_result['taxon']['name'],
                         a_result['taxon']['preferred_common_name'],
                         a_result['taxon']['id'],
@@ -141,8 +146,8 @@ def add_ob_2_proj_v1(observation_id, project_id, access_token):
     post_req = requests.post(post_url,
                              data=json.dumps(payload),
                              headers=_build_auth_header(access_token))
-    LOGGER.info("POST request status code: %d", post_req.status_code)
-    LOGGER.info("POST request response: '%s'", post_req.text)
+    #LOGGER.info("POST request status code: %d", post_req.status_code)
+    #LOGGER.info("POST request response: '%s'", post_req.text)
 
 
 def add_ob_2_proj(observation_id, project_id, access_token):
@@ -158,8 +163,8 @@ def add_ob_2_proj(observation_id, project_id, access_token):
     if post_req.status_code == 200:
         LOGGER.info("POST successful")
         return True
-    LOGGER.info("POST request status code: %d", post_req.status_code)
-    LOGGER.info("POST request response: '%s'", post_req.text)
+    #LOGGER.info("POST request status code: %d", post_req.status_code)
+    #LOGGER.info("POST request response: '%s'", post_req.text)
     return False
 
 def _build_auth_header(access_token: str) -> Dict[str, str]:
@@ -179,21 +184,21 @@ with open(LOG_FILE_NAME, "w"):
     pass
 
 LOG_FORMATTER = logging.Formatter("%(asctime)s [%(threadName)-12.12s]"
-                                  " [%(levelname)-5.5s]  %(message)s")
+                                  " [%(levelname)-5.5s] %(message)s")
 LOGGER = logging.getLogger()
 
 FILE_HANDLER = logging.FileHandler("{0}/{1}".format(LOG_PATH, LOG_FILE_NAME))
 FILE_HANDLER.setFormatter(LOG_FORMATTER)
 LOGGER.addHandler(FILE_HANDLER)
 
-LOG_FORMATTER = logging.Formatter("[%(levelname)-5.5s]  %(message)s")
+LOG_FORMATTER = logging.Formatter("%(message)s")
 CONSOLE_HANDLER = logging.StreamHandler()
 CONSOLE_HANDLER.setFormatter(LOG_FORMATTER)
 LOGGER.addHandler(CONSOLE_HANDLER)
 
 
 def print_obs(result):
-   ''' print observations '''
+    ''' print observations '''
 
     obs_id = result['id']
     taxon_id = result['taxon']['id']
@@ -340,52 +345,8 @@ def main():
                 if len(response_data['results']) == 0:
                     done = True
                 for result in response_data['results']:
-                    new_species_flag = False
-                    obs_id = result['id']
-                    taxon_id = result['taxon']['id']
-                    try:
-                        pass
-                        #rank = result['taxon']['rank']
-                    except KeyError:
-                        pass
-                        #rank = '<none>'
-                    #taxon = result['taxon']['iconic_taxon_name']
+	
 
-                    # If taxon ID is not in list of species already in
-                    # project and not is list of new species we have already
-                    # found
-                    # print banner, increment counter, and set flag
-                    if taxon_id not in project_species and \
-                       taxon_id not in new_species:
-                        new_species.append(taxon_id)
-                        LOGGER.info("===== NEW SPECIES FOR PROJECT =====")
-                        new_species_count += 1
-                        new_species_flag = True
-
-                    # Print some information about observation
-                    LOGGER.info("Observation ID:        %s", obs_id)
-                    LOGGER.info("Taxon ID:              %s", taxon_id)
-                    LOGGER.info("Name:                  %s",
-                                result['taxon']['name'])
-                    LOGGER.info("Preferred common name: %s",
-                                result['taxon']['preferred_common_name'])
-                    #LOGGER.info("Rank:                  %s", rank)
-                    #LOGGER.info("Taxon:                 %s", taxon)
-                    LOGGER.info("Grade:                 %s",
-                                result['quality_grade'])
-                    LOGGER.info("Observed at:           %s",
-                                result['time_observed_at'])
-                    LOGGER.info("Created at:            %s",
-                                result['created_at'])
-                    LOGGER.info("User Name:             %s",
-                                result['user']['name'])
-                    #LOGGER.info("User ID:               %s",
-                    #            result['user']['login'])
-                    #LOGGER.info("Place IDs:             %s",
-                    # ",".join(str(x) for x in result['place_ids'][:5]))
-                    #LOGGER.info("Project IDs:           %s",
-                    # ",".join(str(x) for x in result['project_ids']))
-                    #LOGGER.info("\n")
 
                     # Try to add observation to project using access_token for
                     # authentication
@@ -400,10 +361,23 @@ def main():
                             if new_species_flag:
                                 new_species_add += 1
                             observations_added += 1
+                            # If taxon ID is not in list of species already in
+                            # project and not is list of new species we have
+                            # already found
+                            # print banner, increment counter, and set flag
+                            new_species_flag = False
+                            taxon_id = result['taxon']['id']
+                            if taxon_id not in project_species and \
+                               taxon_id not in new_species:
+                                new_species.append(taxon_id)
+                                LOGGER.info("=== NEW SPECIES FOR PROJECT ===")
+                                new_species_count += 1
+                                new_species_flag = True
+                            print_obs(result)
                         else:
                             observations_add_failures += 1
 
-                    LOGGER.info("----------------------------------")
+                    #LOGGER.info("----------------------------------")
 
                 page += 1
             else:
