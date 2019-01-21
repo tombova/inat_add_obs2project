@@ -7,8 +7,9 @@ Created on Tue Jan  1 13:57:09 2019
 """
 import smtplib
 import configparser
+import logging
 
-def send_email(config_values, body, subject='Test email'):
+def send_email(config_values, logger, body, subject='Test email'):
     ''' Send an email from a python script '''
 
     try:
@@ -26,23 +27,30 @@ def send_email(config_values, body, subject='Test email'):
     try:
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.ehlo()
-        print("Sent Hello")
+        logger.debug("Sent Hello")
         server.starttls()
         server.login(config_values['gmail.com']['username'],
                      config_values['gmail.com']['password'])
-        print("Logged in")
+        logger.debug("Logged in")
         server.sendmail(sent_from, send_to, email_text)
-        print("Sent email")
+        logger.info("Sent email")
         server.close()
-
-        print('Email sent!')
         return True
     except smtplib.SMTPException as e_value:
-        print('Something went wrong, %s', str(e_value))
+        logger.error('Something went wrong, %s', str(e_value))
         return False
 
 
 if __name__ == "__main__":
     CONFIG = configparser.ConfigParser()
     CONFIG.read('inat_add_obs2project.ini')
-    send_email(CONFIG, "Test body", subject="test subject")
+    LOGGER = logging.getLogger()
+
+    LOG_FORMATTER = logging.Formatter("[%(levelname)-5.5s]  %(message)s")
+    CONSOLE_HANDLER = logging.StreamHandler()
+    CONSOLE_HANDLER.setFormatter(LOG_FORMATTER)
+    LOGGER.addHandler(CONSOLE_HANDLER)
+    LOGGER.setLevel(CONFIG['DEFAULT']['loggingLevel'])
+
+
+    send_email(CONFIG, LOGGER, "Test body", subject="test subject")
