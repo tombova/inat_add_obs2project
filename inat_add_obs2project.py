@@ -9,7 +9,7 @@ import sys
 import json
 import logging
 import configparser
-#import pprint
+import pprint
 #import time
 from typing import Dict
 import requests
@@ -96,7 +96,7 @@ def get_project_id(project_slug):
 
     return project_id
 
-def get_project(project_id):
+def get_project(project_id, config):
     ''' retrieve project information, return a list of species IDs '''
 
     project_species = []
@@ -115,62 +115,66 @@ def get_project(project_id):
             place = result['place']
             LOGGER.info("  Place: %s (%s)", place['display_name'],
                         place['id'])
-            LOGGER.info("Number of rules: %d",
+            LOGGER.debug("Number of rules: %d",
                         len(result['project_observation_rules']))
+            LOGGER.info("Taxon Rules:")
             for a_rule in result['project_observation_rules']:
                 if a_rule['operand_type'] == 'Taxon':
                     taxon = a_rule['taxon']
-                    LOGGER.info("  Name: %s,  count: %s", taxon['name'],
-                                taxon['observations_count'])
+                    LOGGER.info("  Taxon: %s", taxon['name'])
             LOGGER.info("----------------------------------")
     else:
         return project_species
 
-    get_url = '%s/projects/%s.json' % (INAT_BASE_URL, project_id)
+    get_url = '%sobservations?project_id=%s' % (INAT_NODE_API_BASE_URL, project_id)
     get_req = requests.get(get_url)
     #LOGGER.info("GET project request status code: %d", get_req.status_code)
     #LOGGER.info("GET project request response: '%s'", get_req.text)
     if get_req.status_code == 200:
         response_data = json.loads(get_req.text)
+        LOGGER.debug(pprint.pformat(response_data))
         LOGGER.info("Project %s observation count: %s",
                     project_id,
-                    response_data['project_observations_count'])
-
-    LOGGER.info("\nGet project stats for %s", project_id)
-    get_stats_url = '%sobservations/species_counts' \
-                    '?project_id=%s&place_id=any' \
-                    '&verifiable=any&captive=any' % \
-                    (INAT_NODE_API_BASE_URL, project_id)
-    get_stats_req = requests.get(get_stats_url)
-    if get_stats_req.status_code == 200:
-        response_data = json.loads(get_stats_req.text)
-        #LOGGER.info(response_data)
-        LOGGER.info("\nTotal species: %s\n------------",
                     response_data['total_results'])
-        results = response_data['results']
-        for a_result in results:
-            try:
-                rank = a_result['taxon']['rank']
-            except KeyError:
-                rank = '<none>'
-            taxon = a_result['taxon']['iconic_taxon_name']
-            LOGGER.info("Name:        %s\n"
-                        "Common name: %s\n"
-                        "Taxon ID:    %s\n"
-                        "Rank:        %s\n"
-                        "Taxon:       %s\n"
-                        "Count: %s\n",
-                        a_result['taxon']['name'],
-                        a_result['taxon']['preferred_common_name'],
-                        a_result['taxon']['id'],
-                        rank,
-                        taxon,
-                        a_result['count'])
-            project_species.append(a_result['taxon']['id'])
-
     else:
-        LOGGER.info("Stats request '%s' failed: %d", get_stats_url,
-                    get_stats_req.status_code)
+        LOGGER.info("GET failed, status = %d", get_req.status_code)
+
+    if config.getboolean('inaturalist.org','showspecies'):
+        LOGGER.info("\nGet project stats for %s", project_id)
+        get_stats_url = '%sobservations/species_counts' \
+                        '?project_id=%s&place_id=any' \
+                        '&verifiable=any&captive=any' % \
+                        (INAT_NODE_API_BASE_URL, project_id)
+        get_stats_req = requests.get(get_stats_url)
+        if get_stats_req.status_code == 200:
+            response_data = json.loads(get_stats_req.text)
+            LOGGER.debug(pprint.pformat(response_data))
+            LOGGER.info("\nTotal species: %s\n------------",
+                        response_data['total_results'])
+            results = response_data['results']
+            for a_result in results:
+                try:
+                    rank = a_result['taxon']['rank']
+                except KeyError:
+                    rank = '<none>'
+                taxon = a_result['taxon']['iconic_taxon_name']
+                LOGGER.info("Name:        %s\n"
+                            "Common name: %s\n"
+                            "Taxon ID:    %s\n"
+                            "Rank:        %s\n"
+                            "Taxon:       %s\n"
+                            "Count: %s\n",
+                            a_result['taxon']['name'],
+                            a_result['taxon']['preferred_common_name'],
+                            a_result['taxon']['id'],
+                            rank,
+                            taxon,
+                            a_result['count'])
+                project_species.append(a_result['taxon']['id'])
+
+        else:
+            LOGGER.info("Stats request '%s' failed: %d", get_stats_url,
+                        get_stats_req.status_code)
 
     return project_species
 
@@ -278,7 +282,9 @@ def main():
 
     config = configparser.ConfigParser()
     config['DEFAULT'] = {'loggingLevel': 'INFO'}
-    config['inaturalist.org'] = {'addObservations': True}
+    config['inaturalist.org'] = {'addObservations': False}
+    config['inaturalist.org'] = {'showSpecies': True}
+    config['gmail.com'] = {'send_email': False}
     if len(sys.argv) > 1:
         config_filename = sys.argv[1]
     else:
@@ -330,7 +336,7 @@ def main():
         return 3
 
     # Get some project information and a list of current species
-    project_species = get_project(project_id)
+    project_species = get_project(project_id, config)
 
     if project_species is None:
         LOGGER.warning("Failed to get species list ")
@@ -457,15 +463,17 @@ def main():
         results_buffer = results_file.read()
 
     # Send results to the following email addresses
-    try:
-        dummy_gmail_config = config['gmail.com']
-        if send_gmail.send_email(config, LOGGER, results_buffer,
-                                 subject="inat_add_objs2project results"):
-            LOGGER.info("Email sent")
-        else:
-            LOGGER.error("Failed to send email")
-    except KeyError:
-        LOGGER.warning("gmail.com configuration not defined")
+    if config.getboolean('gmail.com',
+                         'send_email'):
+        try:
+            dummy_gmail_config = config['gmail.com']
+            if send_gmail.send_email(config, LOGGER, results_buffer,
+                                     subject="inat_add_objs2project results"):
+                LOGGER.info("Email sent")
+            else:
+                LOGGER.error("Failed to send email")
+        except KeyError:
+            LOGGER.warning("gmail.com configuration not defined")
 
 
 if __name__ == "__main__":
