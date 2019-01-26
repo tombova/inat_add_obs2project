@@ -282,8 +282,8 @@ def main():
 
     config = configparser.ConfigParser()
     config['DEFAULT'] = {'loggingLevel': 'INFO'}
-    config['inaturalist.org'] = {'addObservations': False}
-    config['inaturalist.org'] = {'showSpecies': True}
+    config['inaturalist.org'] = {'addobservations': True}
+    config['inaturalist.org'] = {'showspecies': True}
     config['gmail.com'] = {'send_email': False}
     if len(sys.argv) > 1:
         config_filename = sys.argv[1]
@@ -419,7 +419,7 @@ def main():
                     # authentication
 
                     add_obs = config.getboolean('inaturalist.org',
-                                                'addObservations')
+                                                'addobservations')
                     if add_obs:
                         if  add_ob_2_proj(result['id'],
                                           project_id,
