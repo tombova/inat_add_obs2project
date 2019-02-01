@@ -224,7 +224,7 @@ def _build_auth_header(access_token: str) -> Dict[str, str]:
 ############################################
 
 LOG_PATH = "./"
-LOG_FILE_NAME = "results.log"
+LOG_FILE_NAME = "/tmp/results.log"
 with open(LOG_FILE_NAME, "w"):
     pass
 
@@ -300,8 +300,11 @@ def main():
     config.read(config_filename)
 
     # Write possibly update file
-    with open(config_filename, 'w') as config_file:
-        config.write(config_file)
+    try:
+        with open(config_filename, 'w') as config_file:
+            config.write(config_file)
+    except OSError:
+        LOGGER.error("Failed to write config file, '%s'", config_filename)
 
     LOGGER.setLevel(config['DEFAULT']['loggingLevel'])
 
@@ -459,7 +462,7 @@ def main():
                     a_taxon, taxon_response_count[a_taxon])
 
     # Read results file into a buffer
-    with open("results.log", "r") as results_file:
+    with open(LOG_FILE_NAME, "r") as results_file:
         results_buffer = results_file.read()
 
     # Send results to the following email addresses
