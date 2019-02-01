@@ -2,6 +2,6 @@
 
 Python script to bulk add Observations to a Project on the iNaturalist website
 
-support a config file with passwords and other parameters
-
-sends results via gmail
+Features:
+ * Support a config file with passwords and other parameters
+ * Sends results via gmail
