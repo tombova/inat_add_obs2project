@@ -223,7 +223,6 @@ def _build_auth_header(access_token: str) -> Dict[str, str]:
 # Main program                             #
 ############################################
 
-LOG_PATH = "./"
 LOG_FILE_NAME = "/tmp/results.log"
 with open(LOG_FILE_NAME, "w"):
     pass
@@ -232,7 +231,7 @@ LOG_FORMATTER = logging.Formatter("%(asctime)s [%(threadName)-12.12s]"
                                   " [%(levelname)-5.5s] %(message)s")
 LOGGER = logging.getLogger()
 
-FILE_HANDLER = logging.FileHandler("{0}/{1}".format(LOG_PATH, LOG_FILE_NAME))
+FILE_HANDLER = logging.FileHandler("{0}".format(LOG_FILE_NAME))
 FILE_HANDLER.setFormatter(LOG_FORMATTER)
 LOGGER.addHandler(FILE_HANDLER)
 
