@@ -239,10 +239,11 @@ with open(LOG_FILE_NAME, "w"):
 
 LOG_FORMATTER = logging.Formatter("%(asctime)s [%(threadName)-12.12s]"
                                   " [%(levelname)-5.5s] %(message)s")
+FILE_LOG_FORMATTER = logging.Formatter("%(message)s")
 LOGGER = logging.getLogger()
 
 FILE_HANDLER = logging.FileHandler("{0}".format(LOG_FILE_NAME))
-FILE_HANDLER.setFormatter(LOG_FORMATTER)
+FILE_HANDLER.setFormatter(FILE_LOG_FORMATTER)
 LOGGER.addHandler(FILE_HANDLER)
 
 LOG_FORMATTER = logging.Formatter("%(message)s")
@@ -319,6 +320,8 @@ def search_new_obs(config, project_id, project_species):
     excluded_observations = [x.strip() for x in \
                              config['last run']['excluded_observations'].split(',')]
 
+    add_obs_flag = config.getboolean('inaturalist.org',
+                                     'addobservations')
     # Loop for each taxon in list
     # pylint: disable=too-many-nested-blocks
     for a_taxon in taxon_list:
@@ -375,8 +378,6 @@ def search_new_obs(config, project_id, project_species):
                     # Try to add observation to project using access_token for
                     # authentication
 
-                    add_obs_flag = config.getboolean('inaturalist.org',
-                                                     'addobservations')
                     if add_obs_flag:
                         if  add_ob_2_proj(result['id'],
                                           project_id,

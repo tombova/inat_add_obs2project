@@ -14,7 +14,8 @@ def send_email(config_values, logger, body, subject='Test email'):
 
     try:
         sent_from = config_values['gmail.com']['username']
-        send_to = config_values['gmail.com']['destination_email'].split(',')
+        send_to = [x.strip() for x in config_values['gmail.com']['destination_email'].split(',')]
+
     except KeyError:
         return False
     email_text = "From: %s\r\n" \
