@@ -96,7 +96,7 @@ def get_project_id(project_slug):
 
     return project_id
 
-# pylint: disable=too-many-locals
+# pylint: disable=too-many-locals,too-many-statements
 def get_project(project_id, config):
     ''' retrieve project information, return a list of species IDs '''
 
@@ -127,19 +127,22 @@ def get_project(project_id, config):
     else:
         return project_species
 
+    prev_observation_count = config.getint('last run', 'observation_count', fallback=0)
+
     get_url = '%sobservations?project_id=%s' % (INAT_NODE_API_BASE_URL, project_id)
     get_req = requests.get(get_url)
     #LOGGER.info("GET project request status code: %d", get_req.status_code)
     #LOGGER.info("GET project request response: '%s'", get_req.text)
     if get_req.status_code == 200:
         response_data = json.loads(get_req.text)
+        observation_count = int(response_data['total_results'])
         LOGGER.debug(pprint.pformat(response_data))
-        LOGGER.info("Project %s observation count: %s",
-                    project_id,
-                    response_data['total_results'])
+        LOGGER.info("Project %s observation count: %d, previously: %d",
+                    project_id, observation_count, prev_observation_count)
     else:
         LOGGER.info("GET failed, status = %d", get_req.status_code)
 
+    prev_species_count = config.getint('last run', 'species_count', fallback=0)
     LOGGER.info("\nGet project stats for %s", project_id)
     get_stats_url = '%sobservations/species_counts' \
                     '?project_id=%s&place_id=any' \
@@ -149,8 +152,9 @@ def get_project(project_id, config):
     if get_stats_req.status_code == 200:
         response_data = json.loads(get_stats_req.text)
         LOGGER.debug(pprint.pformat(response_data))
-        LOGGER.info("\nTotal species: %s\n------------",
-                    response_data['total_results'])
+        species_count = int(response_data['total_results'])
+        LOGGER.info("\nTotal species: %d, previous: %d\n------------",
+                    species_count, prev_species_count)
         results = response_data['results']
         for a_result in results:
             try:
@@ -177,6 +181,10 @@ def get_project(project_id, config):
         LOGGER.error("Stats request '%s' failed: %d", get_stats_url,
                      get_stats_req.status_code)
 
+    # Save counts to config file
+    config['last run']['species_count'] = str(species_count)
+    config['last run']['observation_count'] = str(observation_count)
+
     return project_species
 
 # THIS DIDN'T WORK
@@ -192,7 +200,7 @@ def add_ob_2_proj_v1(observation_id, project_id, access_token):
     #LOGGER.info("POST request response: '%s'", post_req.text)
 
     if post_req.status_code == 200:
-        LOGGER.info("POST successful")
+        LOGGER.debug("add_ob_2_proj_v1 POST successful")
         return True
     return False
 
@@ -207,7 +215,7 @@ def add_ob_2_proj(observation_id, project_id, access_token):
                              data=data,
                              headers=_build_auth_header(access_token))
     if post_req.status_code == 200:
-        LOGGER.info("POST successful")
+        LOGGER.debug("add_ob_2_proj POST successful")
         return True
 
     LOGGER.error("POST request status code: %d", post_req.status_code)
@@ -275,112 +283,41 @@ def print_obs(result):
     #LOGGER.info("\n")
 
 
+# pylint: disable=too-many-branches
+def search_new_obs(config, project_id, project_species):
+    ''' Search for new observations for project '''
 
-############################################
-# Main program                             #
-############################################
-# pylint: disable=too-many-statements,too-many-branches,too-many-locals
-def main():
-    ''' Main function '''
+    place_id = config['inaturalist.org']['place_id']
+    place_name = get_place_name(place_id)
+    if place_name is None:
+        LOGGER.error("Failed to find place id: '%s'", place_id)
+        sys.exit(6)
 
-    config = configparser.ConfigParser()
-    config['DEFAULT'] = {'loggingLevel': 'INFO'}
-    config['inaturalist.org'] = {'addobservations': True}
-    config['inaturalist.org'] = {'showspecies': True}
-    config['gmail.com'] = {'send_email': False}
-    config['last run'] = {'excluded_observations': ''}
-    if len(sys.argv) > 1:
-        config_filename = sys.argv[1]
-    else:
-        config_filename = 'inat_add_obs2project.ini'
+    taxon_list = [x.strip() for x in config['inaturalist.org']['taxon_list'].split(',')]
+    taxon_response_count = {}
+    # As we find new species, put in this list
+    new_species = []
+    new_species_count = 0
+    new_species_add = 0
+    observations_added = 0
+    observations_add_failures = 0
 
-    try:
-        dummy_h = open(config_filename, 'r')
-        dummy_h.close()
-    except FileNotFoundError:
-        LOGGER.warning("File: '%s' not found, creating", config_filename)
-
-    # Read config file
-    config.read(config_filename)
-
-    LOGGER.setLevel(config['DEFAULT']['loggingLevel'])
-
-    LOGGER.info("Adding observations: %s",
-                str(config.getboolean('inaturalist.org', 'addobservations')))
-    LOGGER.info("Show species: %s",
-                str(config.getboolean('inaturalist.org', 'showspecies')))
-
-    now = datetime.utcnow()
-    excluded_observations = config['last run']['excluded_observations'].split(',')
-
-    try:
-        last_run = config['last run']['timestamp']
-        LOGGER.info("This configuration file last run at: '%s'", last_run)
-    except KeyError:
-        LOGGER.info("This configuration file has not been used before")
-
-    config['last run']['timestamp'] = str(now)
+    # Get token information to access iNaturalist.org from config file
     try:
         access_token = get_access_token(config['inaturalist.org']['username'],
                                         config['inaturalist.org']['password'],
                                         config['inaturalist.org']['app_id'],
                                         config['inaturalist.org']['app_secret'])
     except KeyError:
+        config_filename = config.get('DEFAULT', 'config_filename')
         LOGGER.warning("Need to define username, password, app_id, and "
                        "app_secret in [inaturalist.org] section of "
                        "configuration file: %s",
                        config_filename)
-        access_token = ""
+        sys.exit(7)
 
-    page_size = 100
-
-    # Get project_id from slug name
-    try:
-        project_id = get_project_id(config['inaturalist.org']['project_slug'])
-    except KeyError:
-        LOGGER.error("Need to define project_slug "
-                     "in [inaturalist.org] section of "
-                     "configuration file: %s",
-                     config_filename)
-        return 3
-    if project_id is None:
-        LOGGER.error("Need to define project_slug "
-                     "in [inaturalist.org] section of "
-                     "configuration file: %s",
-                     config_filename)
-        return 3
-
-    # Get some project information and a list of current species
-    project_species = get_project(project_id, config)
-
-    if project_species is None:
-        LOGGER.warning("Failed to get species list ")
-        return 4
-
-
-    # These are some variables used for counting things and keeping track
-    # of states
-    new_species_count = 0
-    new_species_add = 0
-    observations_added = 0
-    observations_add_failures = 0
-    new_species_flag = False
-    taxon_response_count = {}
-
-    # As we find new species, put in this list
-    new_species = []
-
-    # These are the taxon we are interested in
-    taxon_list = ['Reptilia',
-                  'Amphibia']
-
-    taxon_list = [x.strip() for x in config['inaturalist.org']['taxon_list'].split(',')]
-
-    place_id = config['inaturalist.org']['place_id']
-    place_name = get_place_name(place_id)
-    if place_name is None:
-        LOGGER.error("Failed to find place id: '%s'", place_id)
-        return 6
+    excluded_observations = [x.strip() for x in \
+                             config['last run']['excluded_observations'].split(',')]
 
     # Loop for each taxon in list
     # pylint: disable=too-many-nested-blocks
@@ -393,6 +330,7 @@ def main():
         # Start with page 1
         page = 1
         done = False
+        page_size = 100
         while not done:
             LOGGER.info("Page %d, page size: %d", page, page_size)
             # Query all observations in place ID, with matching Taxon ID,
@@ -433,12 +371,13 @@ def main():
                     if str(result['id']) in excluded_observations:
                         continue
 
+                    new_species_flag = True
                     # Try to add observation to project using access_token for
                     # authentication
 
-                    add_obs = config.getboolean('inaturalist.org',
-                                                'addobservations')
-                    if add_obs:
+                    add_obs_flag = config.getboolean('inaturalist.org',
+                                                     'addobservations')
+                    if add_obs_flag:
                         if  add_ob_2_proj(result['id'],
                                           project_id,
                                           access_token):
@@ -460,24 +399,114 @@ def main():
                        taxon_id not in new_species:
                         new_species.append(taxon_id)
                         LOGGER.info("=== NEW SPECIES FOR PROJECT, %d ===", taxon_id)
-                        new_species_count += 1
                         new_species_flag = True
                         print_obs(result)
-
-                    #LOGGER.info("----------------------------------")
+                    else:
+                        print_obs(result)
 
                 page += 1
             else:
                 done = True
                 LOGGER.info("Observation response: %s", req_resp.text)
 
-    LOGGER.info("\nNew Species: %d", new_species_count)
-    LOGGER.info("New Species Added: %d", new_species_add)
-    LOGGER.info("Observations Added: %d", observations_added)
-    LOGGER.info("Observations Add Failures: %d", observations_add_failures)
     for a_taxon in taxon_response_count:
         LOGGER.info("Taxon: %s, total results: %d",
                     a_taxon, taxon_response_count[a_taxon])
+
+    if add_obs_flag:
+        # Get some project information and a list of current species
+        project_species = get_project(project_id, config)
+
+        LOGGER.info("\nNew Species: %d", new_species_count)
+        LOGGER.info("New Species Added: %d", new_species_add)
+        LOGGER.info("Observations Added: %d", observations_added)
+        LOGGER.info("Observations Add Failures: %d", observations_add_failures)
+
+    # Save excluded observations for next time
+    config['last run']['excluded_observations'] = ",".join(excluded_observations)
+
+    return new_species
+
+############################################
+# Main program                             #
+############################################
+# pylint: disable=too-many-statements,too-many-branches,too-many-locals
+def main():
+    ''' Main function '''
+
+    config = configparser.ConfigParser()
+    config['DEFAULT'] = {'loggingLevel': 'INFO'}
+    config['inaturalist.org'] = {'addobservations': True}
+    config['inaturalist.org'] = {'showspecies': True}
+    config['inaturalist.org'] = {'searchnew': True}
+    config['gmail.com'] = {'send_email': False}
+    config['last run'] = {'excluded_observations': ''}
+    if len(sys.argv) > 1:
+        config_filename = sys.argv[1]
+    else:
+        config_filename = 'inat_add_obs2project.ini'
+
+    try:
+        dummy_h = open(config_filename, 'r')
+        dummy_h.close()
+    except FileNotFoundError:
+        LOGGER.warning("File: '%s' not found, creating", config_filename)
+
+    # Read config file
+    config.read(config_filename)
+    config['DEFAULT']['config_filename'] = config_filename
+
+    LOGGER.setLevel(config['DEFAULT']['loggingLevel'])
+
+    LOGGER.info("Adding observations: %s",
+                str(config.getboolean('inaturalist.org', 'addobservations')))
+    LOGGER.info("Show species: %s",
+                str(config.getboolean('inaturalist.org', 'showspecies')))
+
+    now = datetime.utcnow()
+
+    try:
+        last_run = config['last run']['timestamp']
+        LOGGER.info("This configuration file last run at: '%s'", last_run)
+    except KeyError:
+        LOGGER.info("This configuration file has not been used before")
+
+    # Update timestamp
+    config['last run']['timestamp'] = str(now)
+
+
+    # Get project_id from slug name
+    try:
+        project_id = get_project_id(config['inaturalist.org']['project_slug'])
+    except KeyError:
+        LOGGER.error("Need to define project_slug "
+                     "in [inaturalist.org] section of "
+                     "configuration file: %s",
+                     config_filename)
+        return 3
+    if project_id is None:
+        LOGGER.error("Need to define project_slug "
+                     "in [inaturalist.org] section of "
+                     "configuration file: %s",
+                     config_filename)
+        return 3
+
+    # Get some project information and a list of current species
+    project_species = get_project(project_id, config)
+
+    if project_species is None:
+        LOGGER.warning("Failed to get species list ")
+        return 4
+
+
+    # These are some variables used for counting things and keeping track
+    # of states
+    search_new = config.getboolean('inaturalist.org',
+                                   'searchnew')
+
+
+    if search_new:
+        new_species = search_new_obs(config, project_id, project_species)
 
     # Read results file into a buffer
     with open(LOG_FILE_NAME, "r") as results_file:
@@ -496,15 +525,16 @@ def main():
         except KeyError:
             LOGGER.warning("gmail.com configuration not defined")
 
-    # Save excluded observations for next time
-    config['last run']['excluded_observations'] = ",".join(excluded_observations)
 
     # Write possibly update to configuration file
+    config_filename = config.get('DEFAULT', 'config_filename')
     try:
         with open(config_filename, 'w') as config_file:
             config.write(config_file)
     except OSError:
         LOGGER.error("Failed to write config file, '%s'", config_filename)
+
+    return 0
 
 
 if __name__ == "__main__":
