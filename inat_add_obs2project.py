@@ -58,9 +58,9 @@ def get_access_token(username: str,
         #LOGGER.info("Access token: '%s'" % response.json()["access_token"])
         return response.json()["access_token"]
 
-    except KeyError:
+    except KeyError as an_error:
         raise AuthenticationError("Authentication error, "
-                                  " please check credentials.")
+                                  " please check credentials.") from an_error
 
 def get_place_name(place_id):
     ''' Get Place name from ID '''
@@ -219,9 +219,12 @@ def add_ob_2_proj(observation_id, project_id, access_token):
         return True
 
     LOGGER.error("POST request status code: %d", post_req.status_code)
-    response_data = json.loads(post_req.text)
-    for error in response_data['errors']:
-        LOGGER.error("POST request response: '%s'", error)
+    try:
+        response_data = json.loads(post_req.text)
+        for error in response_data['errors']:
+            LOGGER.error("POST request response: '%s'", error)
+    except json.JSONDecodeError:
+        LOGGER.error("Failed to decode post response:\n%s", post_req.text)
 
     return False
 
@@ -382,8 +385,6 @@ def search_new_obs(config, project_id, project_species):
                         if  add_ob_2_proj(result['id'],
                                           project_id,
                                           access_token):
-                            if new_species_flag:
-                                new_species_add += 1
                             observations_added += 1
                         else:
                             observations_add_failures += 1
@@ -400,7 +401,7 @@ def search_new_obs(config, project_id, project_species):
                        taxon_id not in new_species:
                         new_species.append(taxon_id)
                         LOGGER.info("=== NEW SPECIES FOR PROJECT, %d ===", taxon_id)
-                        new_species_flag = True
+                        new_species_add += 1
                         print_obs(result)
                     else:
                         print_obs(result)

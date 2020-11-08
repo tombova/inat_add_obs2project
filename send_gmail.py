@@ -12,6 +12,9 @@ import logging
 def send_email(config_values, logger, body, subject='Test email'):
     ''' Send an email from a python script '''
 
+
+    #ascii_body = body.encode('ascii', 'ignore')
+
     try:
         sent_from = config_values['gmail.com']['username']
         send_to = [x.strip() for x in config_values['gmail.com']['destination_email'].split(',')]
