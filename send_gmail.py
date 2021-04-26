@@ -36,7 +36,7 @@ def send_email(config_values, logger, body, subject='Test email'):
         server.login(config_values['gmail.com']['username'],
                      config_values['gmail.com']['password'])
         logger.debug("Logged in")
-        server.sendmail(sent_from, send_to, email_text)
+        server.sendmail(sent_from, send_to, email_text.encode('utf-8'))
         logger.info("Sent email")
         server.close()
         return True
